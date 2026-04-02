@@ -1,4 +1,4 @@
-// src/app/api/mock-stk-push/route.ts - Hybrid: real PayHero if env vars set, mock otherwise
+// src/app/api/mock-stk-push/route.ts
 import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
@@ -17,53 +17,82 @@ export async function POST(request: Request) {
 
     console.log('Received payload:', JSON.stringify(body, null, 2));
 
-    // Check if PayHero env vars are set
-    if (process.env.PAYHERO_BASIC_AUTH_TOKEN && process.env.PAYHERO_CHANNEL_ID) {
-      console.log('Using REAL PayHero integration');
+    // ==================== MULTIPLE ACCOUNTS (Robust Alternation) ====================
+    const accounts = [
+      {
+        name: "Account 1",
+        api_key: process.env.HASHBACK_API_KEY_1,
+        account_id: process.env.HASHBACK_ACCOUNT_ID_1,
+      },
+      {
+        name: "Account 2",
+        api_key: process.env.HASHBACK_API_KEY_2,
+        account_id: process.env.HASHBACK_ACCOUNT_ID_2,
+      },
+    ].filter(acc => acc.api_key && acc.account_id); // Remove invalid/missing accounts
 
-      const payload = {
-        amount: Number(amount),
-        phone_number: normalizedPhone,
-        channel_id: Number(process.env.PAYHERO_CHANNEL_ID),
-        provider: 'm-pesa',
-        external_reference: apiRef,
-        customer_name: 'Test User',
-        callback_url: 'https://my-fuliza-analysis.vercel.app/api/payhero-callback',
-      };
-
-      const res = await fetch('https://backend.payhero.co.ke/api/v2/payments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${process.env.PAYHERO_BASIC_AUTH_TOKEN}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-
-      console.log('PayHero status:', res.status);
-      console.log('PayHero body:', data);
-
-      if (!res.ok) {
-        return NextResponse.json({ ok: false, error: data?.message || 'PayHero failed' }, { status: res.status });
-      }
-
-      return NextResponse.json({ ok: true, message: 'STK push sent', data });
-    } else {
-      // Fallback to pure mock if env vars missing
-      console.log('Using SAFE MOCK (env vars missing)');
-
+    if (accounts.length === 0) {
+      console.log('Using SAFE MOCK (No HashBack accounts configured)');
       await new Promise(resolve => setTimeout(resolve, 2000));
-
       return NextResponse.json({
         ok: true,
-        message: 'Mock STK push initiated (env vars not set)',
-        trackingId: 'MOCK-' + Date.now()
+        message: 'Mock STK push initiated',
+        trackingId: 'MOCK-' + Date.now(),
       });
     }
+
+    // Strict round-robin alternation among available accounts
+    const index = Date.now() % accounts.length;
+    const selected = accounts[index];
+
+    console.log(`🔄 Using ${selected.name} (${accounts.length} account(s) available)`);
+
+    const payload = {
+      api_key: selected.api_key,
+      account_id: selected.account_id,
+      amount: amount.toString(),
+      msisdn: normalizedPhone,
+      reference: apiRef,
+    };
+
+    const res = await fetch('https://api.hashback.co.ke/v2/initiatestk', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    console.log('HashBack HTTP status:', res.status);
+
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+
+    console.log('HashBack response:', JSON.stringify(data, null, 2));
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { ok: false, error: data?.message || `HashBack failed with status ${res.status}` },
+        { status: res.status }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      message: 'STK push sent',
+      data,
+      usedAccount: selected.name
+    });
   } catch (error: any) {
-    console.error('Route error:', error.message || error);
-    return NextResponse.json({ ok: false, error: 'Server error' }, { status: 500 });
+    console.error('Route error:', error.message || error.stack || error);
+    return NextResponse.json(
+      { ok: false, error: error.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }
