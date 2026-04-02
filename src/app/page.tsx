@@ -28,6 +28,14 @@ export default function FulizaBoostPage() {
       { amount: 53000, fee: 1150 },
       { amount: 62000, fee: 1450 },
       { amount: 75000, fee: 2100 },
+      /*{ amount: 5000, fee: 30 },
+      { amount: 10000, fee: 50 },
+      { amount: 19000, fee: 89 },
+      { amount: 32000, fee: 110 },
+      { amount: 44000, fee: 149 },
+      { amount: 53000, fee: 230 },
+      { amount: 62000, fee: 300 },
+      { amount: 75000, fee: 450 },*/
     ],
     []
   );
